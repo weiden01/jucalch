@@ -150,6 +150,142 @@ function todayISO(): string {
 }
 
 // ============================================================
+// 명령어 처리기
+// ============================================================
+async function handleCommand(text: string, chatId: number): Promise<Response> {
+  const [cmd, ...rest] = text.split(/\s+/);
+  const arg = rest.join(" ").trim();
+
+  if (cmd === "/start" || cmd === "/help") {
+    await sendReply(
+      chatId,
+      [
+        "<b>jucalch 봇 사용법</b>",
+        "",
+        "📝 <b>이벤트 등록</b>: 그냥 뉴스/텍스트/URL 보내면 자동 파싱",
+        "",
+        "📋 <b>/list</b> — 다가오는 이벤트 20개 목록",
+        "🗑️ <b>/delete &lt;id&gt;</b> — 특정 이벤트 삭제 (id 뒷자리 6~8자만 입력해도 OK)",
+        "💥 <b>/clear yes</b> — 전체 이벤트 삭제 (yes 없으면 무시)",
+        "❓ <b>/help</b> — 이 도움말",
+      ].join("\n"),
+    );
+    return new Response("help", { status: 200 });
+  }
+
+  if (cmd === "/list") {
+    if (!supabaseAdmin) {
+      await sendReply(chatId, "❌ DB 연결 없음");
+      return new Response("no db", { status: 200 });
+    }
+    const { data, error } = await supabaseAdmin
+      .from("events")
+      .select("id, date, time, title, company_name")
+      .gte("date", todayISO())
+      .order("date", { ascending: true })
+      .order("time", { ascending: true, nullsFirst: true })
+      .limit(20);
+    if (error) {
+      await sendReply(chatId, `❌ 조회 실패: ${error.message}`);
+      return new Response("list err", { status: 200 });
+    }
+    if (!data || data.length === 0) {
+      await sendReply(chatId, "📭 등록된 다가오는 이벤트가 없음.");
+      return new Response("empty", { status: 200 });
+    }
+    const lines = data.map((e) => {
+      const shortId = String(e.id).slice(-8);
+      const time = e.time ? ` ${e.time}` : "";
+      return `<code>${shortId}</code> · ${e.date}${time} · ${e.title} (${e.company_name})`;
+    });
+    await sendReply(
+      chatId,
+      [`📋 다가오는 이벤트 <b>${data.length}개</b>`, "", ...lines, "", "삭제: /delete &lt;id 뒷 8자리&gt;"].join("\n"),
+    );
+    return new Response("listed", { status: 200 });
+  }
+
+  if (cmd === "/delete") {
+    if (!supabaseAdmin) {
+      await sendReply(chatId, "❌ DB 연결 없음");
+      return new Response("no db", { status: 200 });
+    }
+    if (!arg) {
+      await sendReply(chatId, "사용법: <code>/delete &lt;id&gt;</code>\n먼저 /list 로 id 확인");
+      return new Response("no arg", { status: 200 });
+    }
+    // arg가 id 전체 또는 뒷 몇 자리
+    const { data: matches, error: qErr } = await supabaseAdmin
+      .from("events")
+      .select("id, date, title, company_name")
+      .ilike("id", `%${arg}%`)
+      .limit(10);
+    if (qErr) {
+      await sendReply(chatId, `❌ 조회 실패: ${qErr.message}`);
+      return new Response("q err", { status: 200 });
+    }
+    if (!matches || matches.length === 0) {
+      await sendReply(chatId, `⚠️ <code>${arg}</code> 에 해당하는 이벤트 없음`);
+      return new Response("no match", { status: 200 });
+    }
+    if (matches.length > 1) {
+      const lines = matches.map(
+        (e) => `<code>${String(e.id).slice(-8)}</code> · ${e.date} · ${e.title}`,
+      );
+      await sendReply(
+        chatId,
+        [`⚠️ 여러 개 매치됨 (${matches.length}). 더 구체적으로:`, "", ...lines].join("\n"),
+      );
+      return new Response("multi", { status: 200 });
+    }
+    const target = matches[0];
+    const { error: delErr } = await supabaseAdmin.from("events").delete().eq("id", target.id);
+    if (delErr) {
+      await sendReply(chatId, `❌ 삭제 실패: ${delErr.message}`);
+      return new Response("del err", { status: 200 });
+    }
+    await sendReply(
+      chatId,
+      `🗑️ 삭제 완료\n${target.date} · <b>${target.title}</b> (${target.company_name})`,
+    );
+    return new Response("deleted", { status: 200 });
+  }
+
+  if (cmd === "/clear") {
+    if (!supabaseAdmin) {
+      await sendReply(chatId, "❌ DB 연결 없음");
+      return new Response("no db", { status: 200 });
+    }
+    if (arg !== "yes") {
+      await sendReply(
+        chatId,
+        "⚠️ 전체 이벤트 삭제 확인이 필요함.\n실행: <code>/clear yes</code>",
+      );
+      return new Response("need confirm", { status: 200 });
+    }
+    const { count: before } = await supabaseAdmin
+      .from("events")
+      .select("id", { count: "exact", head: true });
+    const { error: delErr } = await supabaseAdmin
+      .from("events")
+      .delete()
+      .not("id", "is", null);
+    if (delErr) {
+      await sendReply(chatId, `❌ 전체 삭제 실패: ${delErr.message}`);
+      return new Response("clear err", { status: 200 });
+    }
+    await sendReply(chatId, `💥 전체 이벤트 삭제 완료 (${before ?? 0}개)`);
+    return new Response("cleared", { status: 200 });
+  }
+
+  await sendReply(
+    chatId,
+    `모르는 명령어: <code>${cmd}</code>\n/help 로 사용법 확인`,
+  );
+  return new Response("unknown cmd", { status: 200 });
+}
+
+// ============================================================
 // Health check + 환경변수 오염 진단
 // ============================================================
 function checkKey(raw: string | undefined, expectedPrefix: string, expectedLen?: number) {
@@ -216,6 +352,14 @@ export async function POST(req: NextRequest) {
   }
 
   const chatId = msg.chat.id;
+  const trimmed = msg.text.trim();
+
+  // ============================================================
+  // 명령어 처리
+  // ============================================================
+  if (trimmed.startsWith("/")) {
+    return handleCommand(trimmed, chatId);
+  }
 
   try {
     if (supabaseAdmin) {

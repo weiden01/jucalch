@@ -222,11 +222,10 @@ export async function POST(req: NextRequest) {
 
     return new Response("ok", { status: 200 });
   } catch (err) {
-    console.error("[telegram] handler error", err);
-    await sendReply(
-      chatId,
-      `❌ 처리 중 오류: ${err instanceof Error ? err.message : "unknown"}`,
-    );
+    const stack = err instanceof Error ? err.stack ?? err.message : String(err);
+    console.error("[telegram] handler error", stack);
+    const short = stack.slice(0, 1200);
+    await sendReply(chatId, `<pre>${short.replace(/</g, "&lt;")}</pre>`);
     return new Response("error", { status: 500 });
   }
 }

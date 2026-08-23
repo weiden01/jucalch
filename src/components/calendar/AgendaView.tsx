@@ -165,9 +165,10 @@ function EventRow({
     <li>
       <motion.button
         layoutId={`event-chip-${event.id}`}
+        data-event-id={event.id}
         onClick={onClick}
         whileHover={{ x: 3 }}
-        className="group flex w-full items-start gap-3 rounded-xl border border-transparent px-3 py-3 text-left transition hover:border-zinc-200 hover:bg-zinc-50 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/60"
+        className="group flex w-full items-start gap-3 rounded-xl border border-transparent px-3 py-3 text-left transition hover:border-zinc-200 hover:bg-zinc-50 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/60 data-[highlight=true]:border-emerald-400 data-[highlight=true]:bg-emerald-50 dark:data-[highlight=true]:border-emerald-600 dark:data-[highlight=true]:bg-emerald-950/40"
       >
         <span className={`mt-1.5 h-2.5 w-2.5 flex-shrink-0 rounded-full ${meta.dotClass}`} />
         <div className="min-w-0 flex-1">

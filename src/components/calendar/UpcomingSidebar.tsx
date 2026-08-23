@@ -9,7 +9,7 @@ export function UpcomingSidebar({
   onJump,
 }: {
   events: StockEvent[];
-  onJump: (dateISO: string) => void;
+  onJump: (dateISO: string, eventId?: string) => void;
 }) {
   // 각 이벤트는 이미 유니크 (getImportantUpcoming이 event 단위로 반환)
   // 사이드바에서는 이벤트별 카드 형태로 표시
@@ -42,7 +42,7 @@ export function UpcomingSidebar({
               <motion.button
                 whileHover={{ x: 3 }}
                 whileTap={{ scale: 0.98 }}
-                onClick={() => onJump(e.date)}
+                onClick={() => onJump(e.date, e.id)}
                 className="group flex w-full flex-col rounded-lg border border-transparent px-3 py-2 text-left transition hover:border-emerald-200 hover:bg-emerald-50/60 dark:hover:border-emerald-800/50 dark:hover:bg-emerald-950/30"
               >
                 <span className="flex items-center gap-1.5 text-[11px] font-bold tracking-wide text-emerald-700 dark:text-emerald-400">

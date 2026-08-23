@@ -186,7 +186,7 @@ export function CalendarView() {
   }, [weeks, todayISO]);
 
   const jumpToDate = useCallback(
-    (dateISO: string) => {
+    (dateISO: string, eventId?: string) => {
       const [y, m, d] = dateISO.split("-").map(Number);
       const target = new Date(y, m - 1, d);
       target.setHours(0, 0, 0, 0);
@@ -213,11 +213,29 @@ export function CalendarView() {
 
       let tries = 0;
       const doScroll = () => {
-        const el = document.querySelector<HTMLElement>(`[data-date="${dateISO}"]`);
+        // 1순위: event chip/row에 정확히 하이라이트
+        let el: HTMLElement | null = null;
+        if (eventId) {
+          const matches = document.querySelectorAll<HTMLElement>(
+            `[data-event-id="${eventId}"]`,
+          );
+          // 여러 개(기간 이벤트가 여러 날짜에 확장된 경우) 중 target 날짜 셀 안의 것 우선
+          for (const cand of matches) {
+            if (cand.closest(`[data-date="${dateISO}"]`)) {
+              el = cand;
+              break;
+            }
+          }
+          if (!el && matches.length > 0) el = matches[0];
+        }
+        // 2순위: 날짜 셀
+        if (!el) {
+          el = document.querySelector<HTMLElement>(`[data-date="${dateISO}"]`);
+        }
         if (el) {
           el.scrollIntoView({ behavior: "smooth", block: "center" });
           el.dataset.highlight = "true";
-          window.setTimeout(() => delete el.dataset.highlight, 1800);
+          window.setTimeout(() => delete el!.dataset.highlight, 1800);
         } else if (tries++ < 30) {
           requestAnimationFrame(doScroll);
         }

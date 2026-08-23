@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { StockEvent } from "@/lib/types";
 import { EVENT_TYPE_META } from "@/lib/types";
+import { eventRepo } from "@/lib/repo";
 import { DETAIL_TABS } from "./detailTabs";
 
 export function EventDeepDive({
@@ -14,7 +15,19 @@ export function EventDeepDive({
   onClose: () => void;
 }) {
   const [activeTab, setActiveTab] = useState(DETAIL_TABS[0].key);
-  const meta = EVENT_TYPE_META[event.type];
+  const [enriched, setEnriched] = useState<StockEvent>(event);
+
+  useEffect(() => {
+    let cancelled = false;
+    void eventRepo.getById(event.id).then((full) => {
+      if (!cancelled && full) setEnriched(full);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [event.id]);
+
+  const meta = EVENT_TYPE_META[enriched.type];
   const ActiveComponent =
     DETAIL_TABS.find((t) => t.key === activeTab)?.Component ?? DETAIL_TABS[0].Component;
 
@@ -106,7 +119,7 @@ export function EventDeepDive({
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.18 }}
             >
-              <ActiveComponent event={event} />
+              <ActiveComponent event={enriched} />
             </motion.div>
           </AnimatePresence>
         </div>

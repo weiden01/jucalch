@@ -65,7 +65,42 @@ function extractUrls(text: string, entities?: TelegramEntity[]): string[] {
   return Array.from(urls);
 }
 
-async function fetchArticleText(url: string, maxChars = 6000): Promise<string | null> {
+interface FetchedArticle {
+  url: string;
+  title: string;
+  source: string;
+  bodyText: string;
+}
+
+function extractTitle(html: string): string | null {
+  const og = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i);
+  if (og?.[1]) return decodeEntities(og[1]).trim();
+  const t = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  if (t?.[1]) return decodeEntities(t[1]).replace(/\s+/g, " ").trim();
+  return null;
+}
+
+function extractSourceFromUrl(url: string): string {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, "");
+    return host;
+  } catch {
+    return url;
+  }
+}
+
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)));
+}
+
+async function fetchArticle(url: string, maxBodyChars = 6000): Promise<FetchedArticle | null> {
   try {
     const res = await fetch(url, {
       headers: {
@@ -77,7 +112,11 @@ async function fetchArticleText(url: string, maxChars = 6000): Promise<string | 
     });
     if (!res.ok) return null;
     const html = await res.text();
-    const text = html
+
+    const title = extractTitle(html) ?? extractSourceFromUrl(url);
+    const source = extractSourceFromUrl(url);
+
+    const bodyText = html
       .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
       .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
       .replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, "")
@@ -89,10 +128,12 @@ async function fetchArticleText(url: string, maxChars = 6000): Promise<string | 
       .replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'")
       .replace(/\s+/g, " ")
-      .trim();
-    return text.slice(0, maxChars);
+      .trim()
+      .slice(0, maxBodyChars);
+
+    return { url, title, source, bodyText };
   } catch (e) {
-    console.warn("[telegram] fetchArticleText failed", url, e);
+    console.warn("[telegram] fetchArticle failed", url, e);
     return null;
   }
 }
@@ -189,12 +230,14 @@ export async function POST(req: NextRequest) {
 
     let combinedText = msg.text;
     const urls = extractUrls(msg.text, msg.entities);
+    const fetchedArticles: FetchedArticle[] = [];
     if (urls.length > 0) {
       await sendReply(chatId, `🔗 링크 ${urls.length}개 열어보는 중...`);
-      for (const url of urls.slice(0, 3)) {
-        const article = await fetchArticleText(url);
+      for (const url of urls.slice(0, 5)) {
+        const article = await fetchArticle(url);
         if (article) {
-          combinedText += `\n\n[URL 본문: ${url}]\n${article}`;
+          fetchedArticles.push(article);
+          combinedText += `\n\n[관련 기사: ${article.title} (${article.source})]\n${article.bodyText}`;
         }
       }
     }
@@ -236,6 +279,33 @@ export async function POST(req: NextRequest) {
       console.error("[telegram] insert error", error);
       await sendReply(chatId, `❌ DB 저장 실패: ${error.message}`);
       return new Response("insert failed", { status: 200 });
+    }
+
+    // 관련 기사 링크가 있으면 event_articles에 저장 (이 메시지로 만든 모든 이벤트에 연결)
+    if (fetchedArticles.length > 0) {
+      const articleRows: Array<{
+        event_id: string;
+        title: string;
+        source: string;
+        url: string;
+      }> = [];
+      const today = todayISO();
+      for (const ev of rows) {
+        for (const art of fetchedArticles) {
+          articleRows.push({
+            event_id: ev.id,
+            title: art.title,
+            source: art.source,
+            url: art.url,
+          });
+        }
+      }
+      const { error: artErr } = await supabaseAdmin
+        .from("event_articles")
+        .insert(articleRows.map((r) => ({ ...r, published_at: today })));
+      if (artErr) {
+        console.warn("[telegram] event_articles insert failed", artErr);
+      }
     }
 
     const summary = result.events

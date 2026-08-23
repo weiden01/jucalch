@@ -7,22 +7,64 @@ export function ArticlesTab({ event }: { event: StockEvent }) {
   }
   return (
     <ul className="space-y-3">
-      {articles.map((a) => (
-        <li
-          key={a.id}
-          className="rounded-lg border border-zinc-200 bg-white/60 p-4 backdrop-blur transition hover:border-zinc-300 hover:bg-white dark:border-zinc-800 dark:bg-zinc-900/60 dark:hover:border-zinc-700 dark:hover:bg-zinc-900"
-        >
-          <div className="mb-1 flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
-            <span className="font-medium">{a.source}</span>
-            <span>·</span>
-            <span>{a.publishedAt}</span>
-          </div>
-          <h4 className="font-semibold text-zinc-900 dark:text-zinc-100">{a.title}</h4>
-          {a.excerpt && (
-            <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">{a.excerpt}</p>
-          )}
-        </li>
-      ))}
+      {articles.map((a) => {
+        const clickable = !!a.url;
+        const Wrapper = clickable ? "a" : "div";
+        const wrapperProps = clickable
+          ? {
+              href: a.url,
+              target: "_blank",
+              rel: "noopener noreferrer",
+              className:
+                "block rounded-lg border border-zinc-200 bg-white/60 p-4 backdrop-blur transition hover:border-zinc-400 hover:bg-white hover:shadow-sm dark:border-zinc-800 dark:bg-zinc-900/60 dark:hover:border-zinc-600 dark:hover:bg-zinc-900",
+            }
+          : {
+              className:
+                "rounded-lg border border-zinc-200 bg-white/60 p-4 backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/60",
+            };
+
+        return (
+          <li key={a.id}>
+            <Wrapper {...wrapperProps}>
+              <div className="mb-1 flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+                <span className="font-medium">{a.source}</span>
+                {a.publishedAt && (
+                  <>
+                    <span>·</span>
+                    <span>{a.publishedAt}</span>
+                  </>
+                )}
+                {clickable && (
+                  <span className="ml-auto flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                    링크 열기
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                      <path
+                        d="M3 1h6v6M9 1L1 9"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </span>
+                )}
+              </div>
+              <h4
+                className={`font-semibold ${
+                  clickable
+                    ? "text-zinc-900 group-hover:underline dark:text-zinc-100"
+                    : "text-zinc-900 dark:text-zinc-100"
+                }`}
+              >
+                {a.title}
+              </h4>
+              {a.excerpt && (
+                <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">{a.excerpt}</p>
+              )}
+            </Wrapper>
+          </li>
+        );
+      })}
     </ul>
   );
 }

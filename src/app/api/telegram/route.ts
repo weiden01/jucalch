@@ -190,7 +190,7 @@ export async function POST(req: NextRequest) {
 
     if (!supabaseAdmin) {
       await sendReply(chatId, "❌ DB 관리자 클라이언트 미설정 (SUPABASE_SERVICE_ROLE_KEY 확인)");
-      return new Response("no supabase admin", { status: 500 });
+      return new Response("no supabase admin", { status: 200 });
     }
 
     const rows = result.events.map((e) => ({
@@ -212,7 +212,7 @@ export async function POST(req: NextRequest) {
     if (error) {
       console.error("[telegram] insert error", error);
       await sendReply(chatId, `❌ DB 저장 실패: ${error.message}`);
-      return new Response("insert failed", { status: 500 });
+      return new Response("insert failed", { status: 200 });
     }
 
     const summary = result.events
@@ -232,6 +232,7 @@ export async function POST(req: NextRequest) {
     console.error("[telegram] handler error", stack);
     const short = stack.slice(0, 1200);
     await sendReply(chatId, `<pre>${short.replace(/</g, "&lt;")}</pre>`);
-    return new Response("error", { status: 500 });
+    // 200으로 리턴해서 Telegram 재시도 방지
+    return new Response("error handled", { status: 200 });
   }
 }

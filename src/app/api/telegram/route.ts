@@ -109,8 +109,24 @@ function todayISO(): string {
 }
 
 // ============================================================
-// Health check
+// Health check + 환경변수 오염 진단
 // ============================================================
+function checkKey(raw: string | undefined, expectedPrefix: string, expectedLen?: number) {
+  if (!raw) return { present: false };
+  // eslint-disable-next-line no-control-regex
+  const nonAsciiCount = [...raw].filter((c) => c.charCodeAt(0) > 126).length;
+  const clean = raw.replace(/[^\x20-\x7e]/g, "");
+  return {
+    present: true,
+    rawLen: raw.length,
+    cleanLen: clean.length,
+    nonAsciiChars: nonAsciiCount,
+    startsWithExpected: raw.startsWith(expectedPrefix),
+    expectedLen,
+    lenMatchesExpected: expectedLen ? raw.length === expectedLen : undefined,
+  };
+}
+
 export async function GET() {
   return Response.json({
     ok: true,
@@ -119,6 +135,13 @@ export async function GET() {
     allowedUserCount: ALLOWED_USER_IDS.length,
     hasSupabaseAdmin: !!supabaseAdmin,
     hasOpenAI: !!process.env.OPENAI_API_KEY,
+    diagnostics: {
+      OPENAI_API_KEY: checkKey(process.env.OPENAI_API_KEY, "sk-", 156),
+      SUPABASE_SERVICE_ROLE_KEY: checkKey(process.env.SUPABASE_SERVICE_ROLE_KEY, "eyJ"),
+      NEXT_PUBLIC_SUPABASE_URL: checkKey(process.env.NEXT_PUBLIC_SUPABASE_URL, "https://"),
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: checkKey(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, "eyJ"),
+      TELEGRAM_BOT_TOKEN: checkKey(process.env.TELEGRAM_BOT_TOKEN, "88", 46),
+    },
   });
 }
 

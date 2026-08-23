@@ -21,9 +21,16 @@
 **중요**: 사용자에게 배포 관련 클릭이나 명령 실행을 요구하지 않는다. push까지 Claude가 다 한다.
 
 ## 앞으로의 로드맵
-- A. 페이지 UI 채우기 (현재 진행 중, 사용자 지시에 따라)
-- B. Supabase DB 연결 (이벤트 데이터 저장/조회)
-- C. 외부 데이터 수집 (DART 공시 API 등)
+- A. 페이지 UI 채우기 (완료 수준: 캘린더 뷰/아젠다/모달/공휴일 등)
+- B. Supabase DB 연결 (이벤트 데이터 저장/조회) ← 현재 진행 예정
+- B+. Telegram → GPT 파이프라인
+  - Telegram 봇 (@BotFather)에 사용자가 뉴스/텍스트/URL DM으로 전송
+  - Vercel serverless(/api/telegram)가 webhook 수신
+  - OpenAI GPT로 이벤트 파싱(JSON 구조화 출력)
+  - Supabase events 테이블에 INSERT → Realtime으로 프론트 자동 반영
+  - 이미지·음성은 제외, 텍스트/URL만
+  - 화이트리스트로 사용자 Telegram user_id만 허용
+- C. 외부 데이터 수집 (DART 공시 API 등, Vercel Cron으로 폴링)
 - D. FastAPI 백엔드 세팅 (Railway 서울 리전) — 키움 API 중계용
 - E. 키움 REST OpenAPI+ 연동
 - F. WebSocket 실시간 시세 스트리밍

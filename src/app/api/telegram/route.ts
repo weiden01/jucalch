@@ -167,6 +167,29 @@ function genId(): string {
   return `tg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+// GPT 응답에서 date/time 필드 정규화 (빈값, "-", "null" 같은 placeholder → null)
+function cleanDate(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const t = v.trim();
+  if (!t || t === "-" || t.toLowerCase() === "null" || t.toLowerCase() === "none") return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(t)) return null;
+  return t;
+}
+function cleanTime(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const t = v.trim();
+  if (!t || t === "-" || t.toLowerCase() === "null") return null;
+  if (!/^\d{1,2}:\d{2}$/.test(t)) return null;
+  const [h, m] = t.split(":");
+  return `${h.padStart(2, "0")}:${m}`;
+}
+function cleanText(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const t = v.trim();
+  if (!t || t === "-" || t.toLowerCase() === "null") return null;
+  return t;
+}
+
 // ============================================================
 // Telegram 파일 다운로드
 // ============================================================
@@ -645,23 +668,29 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 3) 신규 이벤트 INSERT
-    const newRows = trulyNewEvents.map((e) => ({
-      id: genId(),
-      date: e.date,
-      date_end: e.dateEnd ?? null,
-      date_label: e.dateLabel ?? null,
-      time: e.time ?? null,
-      ticker: e.ticker || "-",
-      company_name: e.companyName,
-      market: e.market ?? "NONE",
-      type: e.type,
-      title: e.title,
-      summary: e.summary,
-      is_important: e.isImportant ?? false,
-      source: "telegram",
-      raw_message_id: msg.message_id.toString(),
-    }));
+    // 3) 신규 이벤트 INSERT (date/time/label 필드 sanitize)
+    const newRows = trulyNewEvents
+      .map((e) => {
+        const date = cleanDate(e.date);
+        if (!date) return null;
+        return {
+          id: genId(),
+          date,
+          date_end: cleanDate(e.dateEnd),
+          date_label: cleanText(e.dateLabel),
+          time: cleanTime(e.time),
+          ticker: e.ticker?.trim() || "-",
+          company_name: e.companyName,
+          market: e.market ?? "NONE",
+          type: e.type,
+          title: e.title,
+          summary: e.summary,
+          is_important: e.isImportant ?? false,
+          source: "telegram",
+          raw_message_id: msg.message_id.toString(),
+        };
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null);
 
     if (newRows.length > 0) {
       const { error } = await supabaseAdmin.from("events").insert(newRows);
@@ -676,11 +705,14 @@ export async function POST(req: NextRequest) {
     const allLinked = [...result.linkedEvents, ...linkedFromRule];
     const linkedInfo: Array<{ id: string; title: string; date: string; note?: string }> = [];
     for (const link of allLinked) {
-      // 업데이트할 필드 준비
+      // 업데이트할 필드 준비 (date/text sanitize)
       const updates: Record<string, unknown> = {};
-      if (link.updateDateEnd) updates.date_end = link.updateDateEnd;
-      if (link.updateDateLabel) updates.date_label = link.updateDateLabel;
-      if (link.updateSummary) updates.summary = link.updateSummary;
+      const upDateEnd = cleanDate(link.updateDateEnd);
+      if (upDateEnd) updates.date_end = upDateEnd;
+      const upLabel = cleanText(link.updateDateLabel);
+      if (upLabel) updates.date_label = upLabel;
+      const upSummary = cleanText(link.updateSummary);
+      if (upSummary) updates.summary = upSummary;
       if (typeof link.updateIsImportant === "boolean")
         updates.is_important = link.updateIsImportant;
       if (Object.keys(updates).length > 0) {

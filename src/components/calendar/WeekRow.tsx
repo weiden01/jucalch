@@ -1,6 +1,7 @@
 "use client";
 
 import type { StockEvent } from "@/lib/types";
+import { getHolidays } from "@/lib/holidays";
 import { DayCell } from "./DayCell";
 
 function fmtISO(d: Date): string {
@@ -64,6 +65,7 @@ export function WeekRow({
             isToday={d.dateISO === todayISO}
             isCurrentMonth={true}
             events={eventsByDate.get(d.dateISO) ?? []}
+            holidays={getHolidays(d.dateISO)}
             onEventClick={onEventClick}
             onDayClick={onDayClick}
           />

@@ -19,7 +19,7 @@ export function UpcomingSidebar({
   }
 
   return (
-    <aside className="sticky top-4 h-[calc(100vh-2rem)] w-72 flex-shrink-0 overflow-y-auto rounded-2xl border border-zinc-200 bg-white/70 p-4 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/60">
+    <aside className="sticky top-32 h-[calc(100vh-9rem)] w-72 flex-shrink-0 overflow-y-auto overscroll-contain rounded-2xl border border-zinc-200 bg-white/70 p-4 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/60">
       <h2 className="mb-1 text-lg font-bold text-zinc-900 dark:text-zinc-50">
         주요 일정
       </h2>

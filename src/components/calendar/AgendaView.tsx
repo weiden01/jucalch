@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import type { StockEvent } from "@/lib/types";
 import { EVENT_TYPE_META } from "@/lib/types";
+import { getHolidays, type Holiday } from "@/lib/holidays";
 
 const WEEKDAY = ["일", "월", "화", "수", "목", "금", "토"];
 
@@ -69,8 +70,15 @@ function DaySection({
   const weekday = WEEKDAY[date.getDay()];
   const isToday = offset === 0;
   const relLabel = relativeLabel(offset);
+  const iso = fmtISO(date);
+  const holidays = getHolidays(iso);
+  const krHolidays = holidays.filter((h) => h.country === "KR");
+  const usHolidays = holidays.filter((h) => h.country === "US");
+  const hasKrHoliday = krHolidays.length > 0;
   const weekendClass =
-    date.getDay() === 0
+    hasKrHoliday
+      ? "text-rose-500 dark:text-rose-400"
+      : date.getDay() === 0
       ? "text-rose-500 dark:text-rose-400"
       : date.getDay() === 6
       ? "text-blue-500 dark:text-blue-400"
@@ -84,21 +92,33 @@ function DaySection({
           : "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900/60"
       }`}
     >
-      <header className="mb-4 flex items-baseline justify-between border-b border-zinc-100 pb-3 dark:border-zinc-800">
-        <div className="flex items-baseline gap-3">
-          <h2 className={`text-xl font-bold ${weekendClass}`}>
-            {date.getMonth() + 1}월 {date.getDate()}일
-          </h2>
-          <span className={`text-sm font-semibold ${weekendClass}`}>({weekday})</span>
-          {relLabel && (
-            <span className="rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-bold text-white">
-              {relLabel}
-            </span>
-          )}
+      <header className="mb-4 border-b border-zinc-100 pb-3 dark:border-zinc-800">
+        <div className="flex items-baseline justify-between">
+          <div className="flex items-baseline gap-3">
+            <h2 className={`text-xl font-bold ${weekendClass}`}>
+              {date.getMonth() + 1}월 {date.getDate()}일
+            </h2>
+            <span className={`text-sm font-semibold ${weekendClass}`}>({weekday})</span>
+            {relLabel && (
+              <span className="rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-bold text-white">
+                {relLabel}
+              </span>
+            )}
+          </div>
+          <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+            {events.length}개 이벤트
+          </span>
         </div>
-        <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
-          {events.length}개 이벤트
-        </span>
+        {(krHolidays.length > 0 || usHolidays.length > 0) && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {krHolidays.map((h) => (
+              <HolidayBadge key={`kr-${h.name}`} holiday={h} />
+            ))}
+            {usHolidays.map((h) => (
+              <HolidayBadge key={`us-${h.name}`} holiday={h} />
+            ))}
+          </div>
+        )}
       </header>
       {events.length === 0 ? (
         <div className="py-4 text-center text-sm text-zinc-400 dark:text-zinc-600">
@@ -112,6 +132,23 @@ function DaySection({
         </ul>
       )}
     </section>
+  );
+}
+
+function HolidayBadge({ holiday }: { holiday: Holiday }) {
+  if (holiday.country === "KR") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700 dark:bg-rose-950/60 dark:text-rose-300">
+        <span className="text-[10px] opacity-70">한국</span>
+        <span>{holiday.name}</span>
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+      <span className="text-[10px] opacity-70">미장</span>
+      <span>{holiday.name}</span>
+    </span>
   );
 }
 

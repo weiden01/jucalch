@@ -1,6 +1,7 @@
 "use client";
 
 import type { StockEvent } from "@/lib/types";
+import type { Holiday } from "@/lib/holidays";
 import { EventChip } from "./EventChip";
 
 const MAX_VISIBLE = 8;
@@ -12,6 +13,7 @@ export function DayCell({
   isCurrentMonth,
   weekday,
   events,
+  holidays,
   onEventClick,
   onDayClick,
 }: {
@@ -19,20 +21,26 @@ export function DayCell({
   dayNumber: number;
   isToday: boolean;
   isCurrentMonth: boolean;
-  weekday: number; // 0=Sun ... 6=Sat
+  weekday: number;
   events: StockEvent[];
+  holidays: Holiday[];
   onEventClick: (event: StockEvent) => void;
   onDayClick: (dateISO: string) => void;
 }) {
   const overflow = events.length - MAX_VISIBLE;
   const visible = events.slice(0, MAX_VISIBLE);
 
-  const weekdayColor =
-    weekday === 0
-      ? "text-rose-500"
-      : weekday === 6
-      ? "text-blue-500"
-      : "text-zinc-500 dark:text-zinc-400";
+  const krHolidays = holidays.filter((h) => h.country === "KR");
+  const usHolidays = holidays.filter((h) => h.country === "US");
+
+  const hasKrHoliday = krHolidays.length > 0;
+  const weekdayColor = hasKrHoliday
+    ? "text-rose-500"
+    : weekday === 0
+    ? "text-rose-500"
+    : weekday === 6
+    ? "text-blue-500"
+    : "text-zinc-500 dark:text-zinc-400";
 
   return (
     <div
@@ -61,6 +69,33 @@ export function DayCell({
           </span>
         )}
       </button>
+
+      {(krHolidays.length > 0 || usHolidays.length > 0) && (
+        <div className="mb-1 space-y-0.5 px-0.5">
+          {krHolidays.map((h) => (
+            <div
+              key={`kr-${h.name}`}
+              className="truncate text-[10px] font-semibold text-rose-600 dark:text-rose-400"
+              title={h.name}
+            >
+              {h.name}
+            </div>
+          ))}
+          {usHolidays.map((h) => (
+            <div
+              key={`us-${h.name}`}
+              className="flex items-center gap-1 truncate text-[10px] text-zinc-500 dark:text-zinc-500"
+              title={`미장 휴장 · ${h.name}`}
+            >
+              <span className="rounded bg-zinc-200 px-1 py-px text-[8px] font-bold text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200">
+                미장
+              </span>
+              <span className="truncate">{h.name}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="flex flex-1 flex-col gap-0.5">
         {visible.map((e) => (
           <EventChip key={e.id} event={e} onClick={() => onEventClick(e)} />

@@ -1,6 +1,10 @@
 import type { NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { parseMessageToEvents } from "@/lib/gptParser";
+import {
+  parseMessageToEvents,
+  type ExistingEventContext,
+  type LinkedEvent,
+} from "@/lib/gptParser";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -140,6 +144,65 @@ async function fetchArticle(url: string, maxBodyChars = 6000): Promise<FetchedAr
 
 function genId(): string {
   return `tg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+// ============================================================
+// 중복 판단 유틸
+// ============================================================
+function normalizeForCompare(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[·•\-–—_/,.·]/g, "")
+    .replace(/발표|공시|결정|예정|일정|이벤트/g, "");
+}
+
+function titleSimilarity(a: string, b: string): number {
+  const na = normalizeForCompare(a);
+  const nb = normalizeForCompare(b);
+  if (!na || !nb) return 0;
+  if (na === nb) return 1;
+  const shorter = na.length < nb.length ? na : nb;
+  const longer = na.length < nb.length ? nb : na;
+  if (longer.includes(shorter) && shorter.length >= 3) return 0.85;
+  // 간단한 자카드 (bigram)
+  const bigrams = (s: string) => {
+    const set = new Set<string>();
+    for (let i = 0; i < s.length - 1; i++) set.add(s.slice(i, i + 2));
+    return set;
+  };
+  const A = bigrams(na);
+  const B = bigrams(nb);
+  const inter = [...A].filter((x) => B.has(x)).length;
+  const union = A.size + B.size - inter;
+  return union === 0 ? 0 : inter / union;
+}
+
+async function fetchRecentEventsForContext(): Promise<ExistingEventContext[]> {
+  if (!supabaseAdmin) return [];
+  const now = new Date();
+  const from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 60);
+  const to = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 120);
+  const fmt = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const { data, error } = await supabaseAdmin
+    .from("events")
+    .select("id, date, date_end, date_label, company_name, ticker, type, title")
+    .gte("date", fmt(from))
+    .lte("date", fmt(to))
+    .order("date", { ascending: true })
+    .limit(200);
+  if (error || !data) return [];
+  return data.map((r) => ({
+    id: r.id as string,
+    date: r.date as string,
+    dateEnd: (r.date_end as string | null) ?? null,
+    dateLabel: (r.date_label as string | null) ?? null,
+    companyName: r.company_name as string,
+    ticker: (r.ticker as string) ?? "-",
+    type: r.type as string,
+    title: r.title as string,
+  }));
 }
 
 function todayISO(): string {
@@ -388,9 +451,11 @@ export async function POST(req: NextRequest) {
 
     await sendReply(chatId, "⏳ GPT로 해석 중...");
 
-    const result = await parseMessageToEvents(combinedText, todayISO());
+    // 1) 최근 60일 ~ 향후 120일 기존 이벤트를 컨텍스트로 GPT에 제공
+    const existingEvents = await fetchRecentEventsForContext();
+    const result = await parseMessageToEvents(combinedText, todayISO(), existingEvents);
 
-    if (result.events.length === 0) {
+    if (result.events.length === 0 && result.linkedEvents.length === 0) {
       await sendReply(
         chatId,
         "⚠️ 등록할 수 있는 이벤트를 찾지 못했어.\n날짜가 명확한지 확인해줘 (예: 2026-09-17, 다음 주 화, 이번주 금요일 등).",
@@ -403,7 +468,30 @@ export async function POST(req: NextRequest) {
       return new Response("no supabase admin", { status: 200 });
     }
 
-    const rows = result.events.map((e) => ({
+    // 2) 규칙 기반 안전망: GPT가 놓친 중복을 추가 감지
+    // (같은 날짜 + 같은 회사 + 같은 type + 제목 유사도 0.7+)
+    const linkedFromRule: LinkedEvent[] = [];
+    const trulyNewEvents: typeof result.events = [];
+    for (const e of result.events) {
+      const dup = existingEvents.find(
+        (x) =>
+          x.date === e.date &&
+          x.type === e.type &&
+          normalizeForCompare(x.companyName) === normalizeForCompare(e.companyName) &&
+          titleSimilarity(x.title, e.title) >= 0.7,
+      );
+      if (dup) {
+        linkedFromRule.push({
+          existingId: dup.id,
+          reason: `규칙 기반 중복 감지 (같은 날/회사/유형/유사 제목: ${e.title})`,
+        });
+      } else {
+        trulyNewEvents.push(e);
+      }
+    }
+
+    // 3) 신규 이벤트 INSERT
+    const newRows = trulyNewEvents.map((e) => ({
       id: genId(),
       date: e.date,
       date_end: e.dateEnd ?? null,
@@ -420,50 +508,97 @@ export async function POST(req: NextRequest) {
       raw_message_id: msg.message_id.toString(),
     }));
 
-    const { error } = await supabaseAdmin.from("events").insert(rows);
-    if (error) {
-      console.error("[telegram] insert error", error);
-      await sendReply(chatId, `❌ DB 저장 실패: ${error.message}`);
-      return new Response("insert failed", { status: 200 });
+    if (newRows.length > 0) {
+      const { error } = await supabaseAdmin.from("events").insert(newRows);
+      if (error) {
+        console.error("[telegram] insert error", error);
+        await sendReply(chatId, `❌ DB 저장 실패: ${error.message}`);
+        return new Response("insert failed", { status: 200 });
+      }
     }
 
-    // 관련 기사 링크가 있으면 event_articles에 저장 (이 메시지로 만든 모든 이벤트에 연결)
+    // 4) 연결(link) 이벤트 처리: 기존 이벤트에 기사 첨부 + 필드 업데이트
+    const allLinked = [...result.linkedEvents, ...linkedFromRule];
+    const linkedInfo: Array<{ id: string; title: string; date: string; note?: string }> = [];
+    for (const link of allLinked) {
+      // 업데이트할 필드 준비
+      const updates: Record<string, unknown> = {};
+      if (link.updateDateEnd) updates.date_end = link.updateDateEnd;
+      if (link.updateDateLabel) updates.date_label = link.updateDateLabel;
+      if (link.updateSummary) updates.summary = link.updateSummary;
+      if (typeof link.updateIsImportant === "boolean")
+        updates.is_important = link.updateIsImportant;
+      if (Object.keys(updates).length > 0) {
+        const { error: updErr } = await supabaseAdmin
+          .from("events")
+          .update(updates)
+          .eq("id", link.existingId);
+        if (updErr) console.warn("[telegram] link update failed", link.existingId, updErr);
+      }
+      // 표시용 정보 조회
+      const existing = existingEvents.find((x) => x.id === link.existingId);
+      if (existing) {
+        linkedInfo.push({
+          id: existing.id,
+          title: existing.title,
+          date: existing.date,
+          note: link.reason,
+        });
+      }
+    }
+
+    // 5) 기사 첨부: 신규 이벤트 + 연결된 기존 이벤트 모두에 추가
     if (fetchedArticles.length > 0) {
-      const articleRows: Array<{
-        event_id: string;
-        title: string;
-        source: string;
-        url: string;
-      }> = [];
+      const targetIds = [
+        ...newRows.map((r) => r.id),
+        ...allLinked.map((l) => l.existingId),
+      ];
       const today = todayISO();
-      for (const ev of rows) {
-        for (const art of fetchedArticles) {
-          articleRows.push({
-            event_id: ev.id,
-            title: art.title,
-            source: art.source,
-            url: art.url,
-          });
+      const articleRows = targetIds.flatMap((eventId) =>
+        fetchedArticles.map((art) => ({
+          event_id: eventId,
+          title: art.title,
+          source: art.source,
+          url: art.url,
+          published_at: today,
+        })),
+      );
+      if (articleRows.length > 0) {
+        const { error: artErr } = await supabaseAdmin
+          .from("event_articles")
+          .insert(articleRows);
+        if (artErr) {
+          console.warn("[telegram] event_articles insert failed", artErr);
         }
       }
-      const { error: artErr } = await supabaseAdmin
-        .from("event_articles")
-        .insert(articleRows.map((r) => ({ ...r, published_at: today })));
-      if (artErr) {
-        console.warn("[telegram] event_articles insert failed", artErr);
-      }
     }
 
-    const summary = result.events
-      .map(
-        (e) =>
-          `• ${e.date}${e.time ? ` ${e.time}` : ""} · <b>${e.title}</b> (${e.companyName})`,
-      )
-      .join("\n");
-    await sendReply(
-      chatId,
-      `✅ ${result.events.length}개 이벤트 등록 완료\n\n${summary}\n\n➡️ https://jucalch.vercel.app/calendar`,
-    );
+    // 6) 사용자에게 결과 통보
+    const parts: string[] = [];
+    if (newRows.length > 0) {
+      const newSummary = trulyNewEvents
+        .map(
+          (e) =>
+            `• ${e.date}${e.time ? ` ${e.time}` : ""} · <b>${e.title}</b> (${e.companyName})`,
+        )
+        .join("\n");
+      parts.push(`✅ ${newRows.length}개 이벤트 <b>신규</b> 등록\n${newSummary}`);
+    }
+    if (linkedInfo.length > 0) {
+      const linkSummary = linkedInfo
+        .map(
+          (l) =>
+            `• ${l.date} · <b>${l.title}</b>` +
+            (fetchedArticles.length > 0 ? " (기사 추가)" : " (정보 병합)"),
+        )
+        .join("\n");
+      parts.push(`🔗 ${linkedInfo.length}개 기존 이벤트에 <b>연결</b>\n${linkSummary}`);
+    }
+    if (parts.length === 0) {
+      parts.push("⚠️ 처리된 이벤트가 없음.");
+    }
+    parts.push("➡️ https://jucalch.vercel.app/calendar");
+    await sendReply(chatId, parts.join("\n\n"));
 
     return new Response("ok", { status: 200 });
   } catch (err) {

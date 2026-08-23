@@ -1,6 +1,11 @@
 import OpenAI from "openai";
 
-const apiKey = process.env.OPENAI_API_KEY;
+const rawKey = process.env.OPENAI_API_KEY ?? "";
+// eslint-disable-next-line no-control-regex
+const apiKey = rawKey.replace(/[^\x20-\x7e]/g, "").trim();
+if (rawKey && apiKey !== rawKey) {
+  console.warn("[gptParser] OPENAI_API_KEY had non-ASCII characters — sanitized");
+}
 const openai = apiKey ? new OpenAI({ apiKey }) : null;
 
 export type ParsedEventType =

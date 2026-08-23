@@ -5,8 +5,14 @@ import { parseMessageToEvents } from "@/lib/gptParser";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET;
+function cleanAscii(v: string | undefined): string | undefined {
+  if (!v) return v;
+  // eslint-disable-next-line no-control-regex
+  return v.replace(/[^\x20-\x7e]/g, "").trim();
+}
+
+const BOT_TOKEN = cleanAscii(process.env.TELEGRAM_BOT_TOKEN);
+const WEBHOOK_SECRET = cleanAscii(process.env.TELEGRAM_WEBHOOK_SECRET);
 const ALLOWED_USER_IDS = (process.env.TELEGRAM_ALLOWED_USER_IDS ?? "")
   .split(",")
   .map((s) => s.trim())

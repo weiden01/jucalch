@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import {
   parseMessageToEvents,
+  extractTextFromImage,
   type ExistingEventContext,
   type LinkedEvent,
 } from "@/lib/gptParser";
@@ -29,6 +30,22 @@ interface TelegramEntity {
   url?: string;
 }
 
+interface TelegramDocument {
+  file_id: string;
+  file_unique_id: string;
+  file_name?: string;
+  mime_type?: string;
+  file_size?: number;
+}
+
+interface TelegramPhotoSize {
+  file_id: string;
+  file_unique_id: string;
+  width: number;
+  height: number;
+  file_size?: number;
+}
+
 interface TelegramUpdate {
   update_id: number;
   message?: {
@@ -36,7 +53,11 @@ interface TelegramUpdate {
     from?: { id: number; username?: string; first_name?: string };
     chat: { id: number; type: string };
     text?: string;
+    caption?: string;
+    caption_entities?: TelegramEntity[];
     entities?: TelegramEntity[];
+    document?: TelegramDocument;
+    photo?: TelegramPhotoSize[];
     date: number;
   };
 }
@@ -144,6 +165,75 @@ async function fetchArticle(url: string, maxBodyChars = 6000): Promise<FetchedAr
 
 function genId(): string {
   return `tg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+// ============================================================
+// Telegram 파일 다운로드
+// ============================================================
+async function tgGetFileUrl(fileId: string): Promise<string | null> {
+  if (!BOT_TOKEN) return null;
+  try {
+    const res = await fetch(
+      `https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${encodeURIComponent(fileId)}`,
+      { signal: AbortSignal.timeout(10000) },
+    );
+    const json = (await res.json()) as { ok: boolean; result?: { file_path: string } };
+    if (!json.ok || !json.result?.file_path) return null;
+    return `https://api.telegram.org/file/bot${BOT_TOKEN}/${json.result.file_path}`;
+  } catch (e) {
+    console.warn("[telegram] getFileUrl failed", e);
+    return null;
+  }
+}
+
+async function tgFetchAsText(fileUrl: string, maxChars = 20000): Promise<string | null> {
+  try {
+    const res = await fetch(fileUrl, { signal: AbortSignal.timeout(20000) });
+    if (!res.ok) return null;
+    const raw = await res.text();
+    // HTML이면 태그 제거, 아니면 원본 반환
+    const looksHtml = /<html|<body|<!doctype/i.test(raw.slice(0, 500));
+    const cleaned = looksHtml
+      ? raw
+          .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+          .replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, "")
+          .replace(/<[^>]+>/g, " ")
+          .replace(/&nbsp;/g, " ")
+          .replace(/&amp;/g, "&")
+          .replace(/&lt;/g, "<")
+          .replace(/&gt;/g, ">")
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
+          .replace(/\s+/g, " ")
+          .trim()
+      : raw;
+    return cleaned.slice(0, maxChars);
+  } catch (e) {
+    console.warn("[telegram] fetchAsText failed", e);
+    return null;
+  }
+}
+
+async function tgFetchAsBase64DataUrl(fileUrl: string, mime = "image/jpeg"): Promise<string | null> {
+  try {
+    const res = await fetch(fileUrl, { signal: AbortSignal.timeout(20000) });
+    if (!res.ok) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    return `data:${mime};base64,${buf.toString("base64")}`;
+  } catch (e) {
+    console.warn("[telegram] fetchAsBase64 failed", e);
+    return null;
+  }
+}
+
+function isTextLikeFile(doc: TelegramDocument): boolean {
+  const mime = (doc.mime_type ?? "").toLowerCase();
+  if (mime.startsWith("text/")) return true;
+  if (["application/xml", "application/json", "application/xhtml+xml"].includes(mime)) return true;
+  if (doc.file_name && /\.(html?|txt|md|xml|json|csv)$/i.test(doc.file_name)) return true;
+  return false;
 }
 
 // ============================================================
@@ -404,8 +494,13 @@ export async function POST(req: NextRequest) {
   }
 
   const msg = update.message;
-  if (!msg || !msg.text) {
-    return new Response("no text", { status: 200 });
+  if (!msg) return new Response("no message", { status: 200 });
+
+  const hasText = !!(msg.text || msg.caption);
+  const hasDoc = !!msg.document;
+  const hasPhoto = !!(msg.photo && msg.photo.length > 0);
+  if (!hasText && !hasDoc && !hasPhoto) {
+    return new Response("no content", { status: 200 });
   }
 
   const userId = msg.from?.id?.toString() ?? "";
@@ -415,13 +510,13 @@ export async function POST(req: NextRequest) {
   }
 
   const chatId = msg.chat.id;
-  const trimmed = msg.text.trim();
+  const textOrCaption = (msg.text ?? msg.caption ?? "").trim();
 
   // ============================================================
-  // 명령어 처리
+  // 명령어 처리 (텍스트만)
   // ============================================================
-  if (trimmed.startsWith("/")) {
-    return handleCommand(trimmed, chatId);
+  if (textOrCaption.startsWith("/")) {
+    return handleCommand(textOrCaption, chatId);
   }
 
   try {
@@ -430,13 +525,20 @@ export async function POST(req: NextRequest) {
         source: "telegram",
         external_id: msg.message_id.toString(),
         user_id: userId,
-        text: msg.text,
-        metadata: { chat_id: chatId, date: msg.date, entities: msg.entities ?? null },
+        text: textOrCaption,
+        metadata: {
+          chat_id: chatId,
+          date: msg.date,
+          entities: msg.entities ?? msg.caption_entities ?? null,
+          document: msg.document ?? null,
+          photoCount: msg.photo?.length ?? 0,
+        },
       });
     }
 
-    let combinedText = msg.text;
-    const urls = extractUrls(msg.text, msg.entities);
+    let combinedText = textOrCaption;
+    const entities = msg.entities ?? msg.caption_entities ?? [];
+    const urls = extractUrls(textOrCaption, entities);
     const fetchedArticles: FetchedArticle[] = [];
     if (urls.length > 0) {
       await sendReply(chatId, `🔗 링크 ${urls.length}개 열어보는 중...`);
@@ -445,6 +547,59 @@ export async function POST(req: NextRequest) {
         if (article) {
           fetchedArticles.push(article);
           combinedText += `\n\n[관련 기사: ${article.title} (${article.source})]\n${article.bodyText}`;
+        }
+      }
+    }
+
+    // ============================================================
+    // 첨부 문서 처리 (HTML/TXT/MD 등)
+    // ============================================================
+    if (hasDoc && msg.document) {
+      const doc = msg.document;
+      if (isTextLikeFile(doc)) {
+        await sendReply(chatId, `📄 파일 처리 중: <code>${doc.file_name ?? doc.file_id}</code>`);
+        const url = await tgGetFileUrl(doc.file_id);
+        if (url) {
+          const text = await tgFetchAsText(url);
+          if (text) {
+            combinedText += `\n\n[첨부 파일: ${doc.file_name ?? "document"}]\n${text}`;
+          } else {
+            await sendReply(chatId, `⚠️ 파일 내용을 읽지 못했음`);
+          }
+        } else {
+          await sendReply(chatId, `⚠️ 파일 다운로드 실패`);
+        }
+      } else {
+        await sendReply(
+          chatId,
+          `⚠️ 지원하지 않는 파일 형식: <code>${doc.mime_type ?? "unknown"}</code>. HTML/TXT/MD/XML/CSV만 파싱 가능.`,
+        );
+      }
+    }
+
+    // ============================================================
+    // 이미지 처리 (GPT-4o-mini Vision)
+    // ============================================================
+    if (hasPhoto && msg.photo && msg.photo.length > 0) {
+      const biggest = msg.photo[msg.photo.length - 1];
+      await sendReply(chatId, `🖼️ 이미지 해석 중 (Vision API)...`);
+      const fileUrl = await tgGetFileUrl(biggest.file_id);
+      if (fileUrl) {
+        const dataUrl = await tgFetchAsBase64DataUrl(fileUrl);
+        if (dataUrl) {
+          try {
+            const extracted = await extractTextFromImage(dataUrl);
+            if (extracted.trim()) {
+              combinedText += `\n\n[이미지에서 추출된 텍스트]\n${extracted}`;
+            } else {
+              await sendReply(chatId, `⚠️ 이미지에서 이벤트를 찾지 못함`);
+            }
+          } catch (e) {
+            console.warn("[telegram] vision failed", e);
+            await sendReply(chatId, `⚠️ Vision API 오류`);
+          }
+        } else {
+          await sendReply(chatId, `⚠️ 이미지 다운로드 실패`);
         }
       }
     }

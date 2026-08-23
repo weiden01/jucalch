@@ -23,13 +23,15 @@
 ## 앞으로의 로드맵
 - A. 페이지 UI 채우기 (완료 수준: 캘린더 뷰/아젠다/모달/공휴일 등)
 - B. Supabase DB 연결 (이벤트 데이터 저장/조회) ← 현재 진행 예정
-- B+. Telegram → GPT 파이프라인
-  - Telegram 봇 (@BotFather)에 사용자가 뉴스/텍스트/URL DM으로 전송
+- B+. Telegram → GPT 파이프라인 (구축 완료)
+  - Telegram 봇에 텍스트/URL/HTML파일/이미지 DM 전송
   - Vercel serverless(/api/telegram)가 webhook 수신
-  - OpenAI GPT로 이벤트 파싱(JSON 구조화 출력)
-  - Supabase events 테이블에 INSERT → Realtime으로 프론트 자동 반영
-  - 이미지·음성은 제외, 텍스트/URL만
+  - 텍스트/URL/HTML: 파싱해서 GPT-4o-mini로 이벤트 추출
+  - 이미지: GPT-4o-mini Vision으로 스크린샷·차트 텍스트화 후 파이프라인 연결
+  - 중복 방지: 최근 60일~+120일 이벤트 컨텍스트를 GPT에 제공 (linkedEvents 판정) + 규칙 기반 안전망
+  - Supabase events INSERT → Realtime으로 프론트 자동 반영
   - 화이트리스트로 사용자 Telegram user_id만 허용
+  - 명령어: /list, /delete, /clear yes, /help
 - C. 외부 데이터 수집 (DART 공시 API 등, Vercel Cron으로 폴링)
 - D. FastAPI 백엔드 세팅 (Railway 서울 리전) — 키움 API 중계용
 - E. 키움 REST OpenAPI+ 연동

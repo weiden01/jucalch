@@ -159,6 +159,33 @@ function formatExistingEvents(existing: ExistingEventContext[]): string {
   return `\n\n**기존 등록 이벤트 목록 (중복/연결 판단용)**\n${lines.join("\n")}`;
 }
 
+// 이미지 스크린샷/차트에서 텍스트만 뽑는 헬퍼 (증시 캘린더 이미지 대응)
+export async function extractTextFromImage(imageDataUrl: string): Promise<string> {
+  if (!openai) throw new Error("OPENAI_API_KEY not configured");
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text:
+              "이 이미지는 주식/증시 관련 문서, 캘린더, 뉴스 스크린샷일 가능성이 크다. " +
+              "여기에 나온 모든 증시 이벤트/일정/공시/실적/배당/IPO/매크로 지표를 최대한 정확하게 텍스트로 옮겨줘. " +
+              "각 항목마다 날짜(YYYY-MM-DD), 시간(있으면), 회사/주체명, 이벤트 종류를 명시. " +
+              "표나 리스트 구조는 순서대로 풀어써. 순수 한국어 텍스트만 반환 (JSON X, 마크다운 X).",
+          },
+          { type: "image_url", image_url: { url: imageDataUrl } },
+        ],
+      },
+    ],
+    temperature: 0.1,
+    max_tokens: 2000,
+  });
+  return completion.choices[0]?.message?.content ?? "";
+}
+
 export async function parseMessageToEvents(
   text: string,
   todayISO: string,

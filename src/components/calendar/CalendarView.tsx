@@ -16,7 +16,8 @@ import { WeekRow } from "./WeekRow";
 import { UpcomingSidebar } from "./UpcomingSidebar";
 import { DayModal } from "./DayModal";
 import { EventDeepDive } from "./EventDeepDive";
-import { DateNav } from "./DateNav";
+import { DateNav, type ViewMode } from "./DateNav";
+import { AgendaView } from "./AgendaView";
 
 const INITIAL_WEEKS_BEFORE = 4;
 const INITIAL_WEEKS_AFTER = 12;
@@ -60,6 +61,7 @@ export function CalendarView() {
   const [important, setImportant] = useState<StockEvent[]>([]);
   const [openDate, setOpenDate] = useState<string | null>(null);
   const [openEvent, setOpenEvent] = useState<StockEvent | null>(null);
+  const [mode, setMode] = useState<ViewMode>("month");
 
   const weeks = useMemo(() => {
     const arr: Date[] = [];
@@ -190,37 +192,55 @@ export function CalendarView() {
 
   const openDateEvents = openDate ? eventsByDate.get(openDate) ?? [] : [];
 
+  const agendaDayCount = mode === "week" ? 8 : mode === "twoweek" ? 15 : 0;
+
   return (
     <LayoutGroup>
-      <DateNav todayISO={todayISO} onJump={jumpToDate} />
+      <DateNav
+        todayISO={todayISO}
+        onJump={jumpToDate}
+        mode={mode}
+        onModeChange={setMode}
+      />
 
       <div className="mx-auto flex max-w-7xl gap-6 px-4 py-6 lg:px-8">
         <main className="min-w-0 flex-1">
-          <WeekdayHeader />
-          <div ref={topRef} className="h-1" />
-          {weeks.map((weekStart, idx) => {
-            const prev = idx > 0 ? weeks[idx - 1] : null;
-            const showMonthLabel =
-              !prev ||
-              prev.getMonth() !== weekStart.getMonth() ||
-              prev.getFullYear() !== weekStart.getFullYear();
-            return (
-              <Fragment key={fmtISO(weekStart)}>
-                <WeekRow
-                  weekStart={weekStart}
-                  todayISO={todayISO}
-                  eventsByDate={eventsByDate}
-                  onEventClick={handleEventClick}
-                  onDayClick={handleDayClick}
-                  showMonthLabel={showMonthLabel}
-                />
-              </Fragment>
-            );
-          })}
-          <div ref={bottomRef} className="h-1" />
-          <div className="py-4 text-center text-xs text-zinc-400 dark:text-zinc-600">
-            아래로 스크롤하면 다음 주가 계속 로드됩니다
-          </div>
+          {mode === "month" ? (
+            <>
+              <WeekdayHeader />
+              <div ref={topRef} className="h-1" />
+              {weeks.map((weekStart, idx) => {
+                const prev = idx > 0 ? weeks[idx - 1] : null;
+                const showMonthLabel =
+                  !prev ||
+                  prev.getMonth() !== weekStart.getMonth() ||
+                  prev.getFullYear() !== weekStart.getFullYear();
+                return (
+                  <Fragment key={fmtISO(weekStart)}>
+                    <WeekRow
+                      weekStart={weekStart}
+                      todayISO={todayISO}
+                      eventsByDate={eventsByDate}
+                      onEventClick={handleEventClick}
+                      onDayClick={handleDayClick}
+                      showMonthLabel={showMonthLabel}
+                    />
+                  </Fragment>
+                );
+              })}
+              <div ref={bottomRef} className="h-1" />
+              <div className="py-4 text-center text-xs text-zinc-400 dark:text-zinc-600">
+                아래로 스크롤하면 다음 주가 계속 로드됩니다
+              </div>
+            </>
+          ) : (
+            <AgendaView
+              startDate={today}
+              dayCount={agendaDayCount}
+              eventsByDate={eventsByDate}
+              onEventClick={handleEventClick}
+            />
+          )}
         </main>
         <div className="hidden lg:block">
           <UpcomingSidebar events={important} onJump={jumpToDate} />

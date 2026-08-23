@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 
+export type ViewMode = "month" | "week" | "twoweek";
+
 function daysInMonth(year: number, month1: number): number {
   return new Date(year, month1, 0).getDate();
 }
@@ -9,9 +11,13 @@ function daysInMonth(year: number, month1: number): number {
 export function DateNav({
   todayISO,
   onJump,
+  mode,
+  onModeChange,
 }: {
   todayISO: string;
   onJump: (dateISO: string) => void;
+  mode: ViewMode;
+  onModeChange: (mode: ViewMode) => void;
 }) {
   const [ty, tm, td] = todayISO.split("-").map(Number);
   const [year, setYear] = useState(ty);
@@ -76,8 +82,43 @@ export function DateNav({
         >
           오늘로
         </button>
+
+        <div className="ml-auto flex items-center gap-0.5 rounded-lg border border-zinc-200 bg-zinc-100/70 p-0.5 dark:border-zinc-700 dark:bg-zinc-800/70">
+          <ModeBtn active={mode === "month"} onClick={() => onModeChange("month")}>
+            월단위
+          </ModeBtn>
+          <ModeBtn active={mode === "week"} onClick={() => onModeChange("week")}>
+            주단위
+          </ModeBtn>
+          <ModeBtn active={mode === "twoweek"} onClick={() => onModeChange("twoweek")}>
+            2주단위
+          </ModeBtn>
+        </div>
       </div>
     </div>
+  );
+}
+
+function ModeBtn({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`rounded-md px-3 py-1 text-xs font-semibold transition ${
+        active
+          ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-900 dark:text-zinc-50"
+          : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 

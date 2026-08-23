@@ -86,8 +86,10 @@ export function CalendarView() {
   }, [todayISO, liveTick]);
 
   useEffect(() => {
-    if (!isSupabaseEnabled || !supabase) return;
-    const channel = supabase
+    if (!isSupabaseEnabled) return;
+    const client = supabase;
+    if (!client) return;
+    const channel = client
       .channel("events-realtime")
       .on(
         "postgres_changes",
@@ -100,7 +102,7 @@ export function CalendarView() {
       )
       .subscribe();
     return () => {
-      void supabase.removeChannel(channel);
+      void client.removeChannel(channel);
     };
   }, []);
 

@@ -86,7 +86,8 @@ function DaySection({
 
   return (
     <section
-      className={`rounded-2xl border p-5 transition ${
+      data-date={iso}
+      className={`rounded-2xl border p-5 transition data-[highlight=true]:ring-2 data-[highlight=true]:ring-emerald-400 data-[highlight=true]:ring-offset-2 data-[highlight=true]:ring-offset-white dark:data-[highlight=true]:ring-offset-zinc-950 ${
         isToday
           ? "border-emerald-400 bg-emerald-50/50 dark:border-emerald-600/60 dark:bg-emerald-950/20"
           : "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900/60"

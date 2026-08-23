@@ -192,6 +192,17 @@ export function CalendarView() {
       target.setHours(0, 0, 0, 0);
       const targetWeek = startOfWeek(target);
 
+      // 아젠다 뷰(week/twoweek)면 target이 표시 범위 안에 있는지 확인.
+      // 벗어나면 month 뷰로 전환 후 스크롤 (아젠다 뷰는 오늘로부터 8/15일만 표시)
+      if (mode !== "month") {
+        const dayCount = mode === "week" ? 8 : 15;
+        const agendaEnd = new Date(today);
+        agendaEnd.setDate(agendaEnd.getDate() + dayCount - 1);
+        if (target < today || target > agendaEnd) {
+          setMode("month");
+        }
+      }
+
       if (targetWeek < rangeStart) {
         prependHeightRef.current = document.documentElement.scrollHeight;
         setRangeStart(addDays(targetWeek, -LOAD_CHUNK_WEEKS * 7));
@@ -200,19 +211,20 @@ export function CalendarView() {
         setRangeEnd(addDays(targetWeek, (LOAD_CHUNK_WEEKS + 1) * 7));
       }
 
+      let tries = 0;
       const doScroll = () => {
         const el = document.querySelector<HTMLElement>(`[data-date="${dateISO}"]`);
         if (el) {
           el.scrollIntoView({ behavior: "smooth", block: "center" });
           el.dataset.highlight = "true";
           window.setTimeout(() => delete el.dataset.highlight, 1800);
-        } else {
+        } else if (tries++ < 30) {
           requestAnimationFrame(doScroll);
         }
       };
       requestAnimationFrame(() => requestAnimationFrame(doScroll));
     },
-    [rangeStart, rangeEnd],
+    [rangeStart, rangeEnd, mode, today],
   );
 
   const openDateEvents = openDate ? eventsByDate.get(openDate) ?? [] : [];

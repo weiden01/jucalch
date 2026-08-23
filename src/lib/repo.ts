@@ -36,6 +36,8 @@ class MockEventRepo implements EventRepo {
 interface EventRow {
   id: string;
   date: string;
+  date_end: string | null;
+  date_label: string | null;
   time: string | null;
   ticker: string;
   company_name: string;
@@ -78,6 +80,8 @@ function rowToEvent(
   return {
     id: row.id,
     date: row.date,
+    dateEnd: row.date_end ?? undefined,
+    dateLabel: row.date_label ?? undefined,
     time: row.time ?? undefined,
     ticker: row.ticker,
     companyName: row.company_name,
@@ -179,9 +183,25 @@ export const eventRepo: EventRepo = isSupabaseEnabled
 export function groupEventsByDate(events: StockEvent[]): Map<string, StockEvent[]> {
   const map = new Map<string, StockEvent[]>();
   for (const e of events) {
-    const arr = map.get(e.date) ?? [];
-    arr.push(e);
-    map.set(e.date, arr);
+    const start = e.date;
+    const end = e.dateEnd && e.dateEnd >= e.date ? e.dateEnd : e.date;
+    if (start === end) {
+      const arr = map.get(start) ?? [];
+      arr.push(e);
+      map.set(start, arr);
+      continue;
+    }
+    // 기간 이벤트: 시작~종료 각 날짜에 chip 노출
+    const [sy, sm, sd] = start.split("-").map(Number);
+    const [ey, em, ed] = end.split("-").map(Number);
+    const startD = new Date(sy, sm - 1, sd);
+    const endD = new Date(ey, em - 1, ed);
+    for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
+      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const arr = map.get(iso) ?? [];
+      arr.push(e);
+      map.set(iso, arr);
+    }
   }
   return map;
 }

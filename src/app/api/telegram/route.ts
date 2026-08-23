@@ -262,6 +262,8 @@ export async function POST(req: NextRequest) {
     const rows = result.events.map((e) => ({
       id: genId(),
       date: e.date,
+      date_end: e.dateEnd ?? null,
+      date_label: e.dateLabel ?? null,
       time: e.time ?? null,
       ticker: e.ticker || "-",
       company_name: e.companyName,

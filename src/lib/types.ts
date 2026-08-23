@@ -71,6 +71,8 @@ export interface EventDetail {
 export interface StockEvent {
   id: string;
   date: string;
+  dateEnd?: string;      // 기간 이벤트일 경우 종료일 (YYYY-MM-DD)
+  dateLabel?: string;    // "8월 말", "3분기 초" 등 모호한 시점 텍스트
   time?: string;
   ticker: string;
   companyName: string;

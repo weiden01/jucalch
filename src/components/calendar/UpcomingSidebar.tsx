@@ -11,63 +11,81 @@ export function UpcomingSidebar({
   events: StockEvent[];
   onJump: (dateISO: string) => void;
 }) {
-  const grouped = new Map<string, StockEvent[]>();
-  for (const e of events) {
-    const arr = grouped.get(e.date) ?? [];
-    arr.push(e);
-    grouped.set(e.date, arr);
-  }
+  // 각 이벤트는 이미 유니크 (getImportantUpcoming이 event 단위로 반환)
+  // 사이드바에서는 이벤트별 카드 형태로 표시
+  const sorted = [...events].sort((a, b) => {
+    if (a.date !== b.date) return a.date.localeCompare(b.date);
+    return (a.time ?? "").localeCompare(b.time ?? "");
+  });
 
   return (
-    <aside className="sticky top-32 h-[calc(100vh-9rem)] w-72 flex-shrink-0 overflow-y-auto overscroll-contain rounded-2xl border border-zinc-200 bg-white/70 p-4 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/60">
-      <h2 className="mb-1 text-lg font-bold text-zinc-900 dark:text-zinc-50">
-        주요 일정
-      </h2>
+    <aside className="sticky top-32 h-[calc(100vh-9rem)] w-72 flex-shrink-0 overflow-y-auto overscroll-contain rounded-2xl border border-zinc-200 bg-white/80 p-4 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/70">
+      <div className="mb-3 flex items-baseline justify-between">
+        <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">
+          주요 일정
+        </h2>
+        <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+          {sorted.length}개
+        </span>
+      </div>
       <p className="mb-4 text-xs text-zinc-500 dark:text-zinc-400">
         클릭하면 해당 날짜로 이동
       </p>
-      <ul className="space-y-4">
-        {[...grouped.entries()].map(([date, list]) => (
-          <li key={date}>
-            <div className="mb-1.5 text-xs font-bold tracking-wider text-zinc-500 dark:text-zinc-400">
-              {formatDateLabel(date)}
-            </div>
-            <ul className="space-y-1.5">
-              {list.map((e) => {
-                const meta = EVENT_TYPE_META[e.type];
-                return (
-                  <li key={e.id}>
-                    <motion.button
-                      whileHover={{ x: 3 }}
-                      onClick={() => onJump(e.date)}
-                      className="flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left transition hover:bg-zinc-100 dark:hover:bg-zinc-800/70"
-                    >
-                      <span className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${meta.dotClass}`} />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                          {e.title}
-                        </span>
-                        <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
-                          {e.time && <span className="tabular-nums">{e.time}</span>}
-                          <span>·</span>
-                          <span>{e.companyName}</span>
-                        </span>
-                      </span>
-                    </motion.button>
-                  </li>
-                );
-              })}
-            </ul>
-          </li>
-        ))}
-      </ul>
+      <ol className="relative space-y-2 border-l-2 border-emerald-100 pl-4 dark:border-emerald-900/40">
+        {sorted.map((e) => {
+          const meta = EVENT_TYPE_META[e.type];
+          return (
+            <li key={e.id} className="relative">
+              <span
+                className={`absolute -left-[21px] top-3 h-2.5 w-2.5 rounded-full ring-2 ring-white dark:ring-zinc-900 ${meta.dotClass}`}
+              />
+              <motion.button
+                whileHover={{ x: 3 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => onJump(e.date)}
+                className="group flex w-full flex-col rounded-lg border border-transparent px-3 py-2 text-left transition hover:border-emerald-200 hover:bg-emerald-50/60 dark:hover:border-emerald-800/50 dark:hover:bg-emerald-950/30"
+              >
+                <span className="flex items-center gap-1.5 text-[11px] font-bold tracking-wide text-emerald-700 dark:text-emerald-400">
+                  {formatEventDate(e)}
+                </span>
+                <span className="mt-0.5 truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                  {e.title}
+                </span>
+                <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+                  {e.time && <span className="tabular-nums font-medium">{e.time}</span>}
+                  {e.time && <span>·</span>}
+                  <span className="truncate">{e.companyName}</span>
+                </span>
+              </motion.button>
+            </li>
+          );
+        })}
+      </ol>
     </aside>
   );
 }
 
-function formatDateLabel(iso: string): string {
+function formatEventDate(e: StockEvent): string {
+  const start = fmtShort(e.date);
+  if (e.dateLabel && e.dateEnd && e.dateEnd !== e.date) {
+    return `${start}~${fmtShortDayOnly(e.dateEnd)} · ${e.dateLabel}`;
+  }
+  if (e.dateEnd && e.dateEnd !== e.date) {
+    return `${start}~${fmtShortDayOnly(e.dateEnd)}`;
+  }
+  if (e.dateLabel) {
+    return `${start} · ${e.dateLabel}`;
+  }
+  return start;
+}
+
+function fmtShort(iso: string): string {
   const [y, m, d] = iso.split("-");
   const date = new Date(Number(y), Number(m) - 1, Number(d));
   const weekday = ["일", "월", "화", "수", "목", "금", "토"][date.getDay()];
   return `${y.slice(2)}.${m}.${d} (${weekday})`;
+}
+function fmtShortDayOnly(iso: string): string {
+  const [, , d] = iso.split("-");
+  return d;
 }

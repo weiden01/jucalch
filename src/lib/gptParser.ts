@@ -17,7 +17,9 @@ export type ParsedEventType =
 
 export interface ParsedEvent {
   date: string; // YYYY-MM-DD
-  time?: string; // HH:MM
+  dateEnd?: string; // 기간 종료 (YYYY-MM-DD), 단일 날짜면 생략
+  dateLabel?: string; // 모호 시점 텍스트 ("8월 말", "3분기 초" 등)
+  time?: string; // HH:MM (한국시간 기준)
   type: ParsedEventType;
   ticker: string; // 종목코드, 없으면 "-"
   companyName: string; // 회사/주체명
@@ -44,10 +46,25 @@ const SYSTEM_PROMPT = `너는 한국 주식/글로벌 매크로 이벤트 캘린
    - 애매하거나 날짜가 불분명한 이벤트는 뽑지 마. 확실한 것만.
    - 조건절/추측성 표현("~할 수도 있다", "예상된다") 이면서 날짜가 확정 안 됐으면 제외.
 
-2) 날짜 (date)
-   - 반드시 YYYY-MM-DD 형식.
+2) 날짜 (date, dateEnd, dateLabel)
+   - **date**: 반드시 YYYY-MM-DD 형식. 단일 날짜든 기간이든 이 필드는 필수 (기간이면 시작일).
    - 상대 날짜(오늘, 내일, 이번주 금요일, 다음 주 화 등)는 오늘이 {TODAY_ISO} 기준으로 절대 날짜로 변환.
    - 요일만 있고 날짜 없으면 문맥에서 가장 가까운 미래 해당 요일로 추정.
+
+   - **dateEnd** (선택): 이벤트가 기간(며칠~몇 주)에 걸치면 종료일을 YYYY-MM-DD로. 단일 날짜면 생략.
+     예) "9월 24~26일 추석 연휴" → date: 2026-09-24, dateEnd: 2026-09-26
+     예) "IPO 청약 8월 18~20일" → date: 2026-08-18, dateEnd: 2026-08-20
+     예) "잭슨홀 심포지엄 8/22~24" → date: 2026-08-22, dateEnd: 2026-08-24
+
+   - **dateLabel** (선택): 정확한 일자가 없고 "말/초/중순/분기말" 같은 모호 표현이면 한국어 라벨을 그대로 담아라. date에는 추정 날짜를 넣고, dateLabel에 원문 표현 유지.
+     예) "8월 말 발표 예정" → date: 2026-08-28 (추정), dateLabel: "8월 말"
+     예) "8월 초 IPO 예정" → date: 2026-08-05 (추정), dateLabel: "8월 초"
+     예) "8월 중순 배당락" → date: 2026-08-15 (추정), dateLabel: "8월 중순"
+     예) "3분기 말 실적" → date: 2026-09-25 (추정), dateLabel: "3분기 말"
+     예) "3분기 초" → date: 2026-07-05 (추정), dateLabel: "3분기 초"
+     예) "3분기 중" → date: 2026-08-15 (추정), dateLabel: "3분기 중"
+   - dateLabel과 dateEnd가 동시에 있을 수도 있음 (예: "3분기 말경 실적 발표 시즌" → date + dateLabel + dateEnd 조합 가능).
+   - 시점이 완전히 불명(연도조차 모호)이면 events에서 제외.
 
 3) 시간 (time, HH:MM) — 한국시간(KST) 기준으로 통일
    - 한국 이벤트는 원문의 한국시간 그대로.
@@ -90,7 +107,9 @@ const SYSTEM_PROMPT = `너는 한국 주식/글로벌 매크로 이벤트 캘린
   "events": [
     {
       "date": "YYYY-MM-DD",
-      "time": "HH:MM",
+      "dateEnd": "YYYY-MM-DD (선택, 기간 이벤트만)",
+      "dateLabel": "8월 말 / 3분기 초 등 (선택, 모호 시점만)",
+      "time": "HH:MM (선택, 한국시간)",
       "type": "earnings | disclosure | dividend | ipo | macro",
       "ticker": "종목코드 또는 -",
       "companyName": "회사명 또는 주체",

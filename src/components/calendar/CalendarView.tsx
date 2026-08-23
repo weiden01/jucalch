@@ -9,8 +9,9 @@ import {
   useRef,
   useState,
 } from "react";
-import { AnimatePresence, LayoutGroup } from "framer-motion";
+import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import { eventRepo, groupEventsByDate } from "@/lib/repo";
+import { supabase, isSupabaseEnabled } from "@/lib/supabase";
 import type { StockEvent } from "@/lib/types";
 import { WeekRow } from "./WeekRow";
 import { UpcomingSidebar } from "./UpcomingSidebar";
@@ -71,15 +72,37 @@ export function CalendarView() {
     return arr;
   }, [rangeStart, rangeEnd]);
 
+  const [liveTick, setLiveTick] = useState(0);
+  const [flashRecent, setFlashRecent] = useState(false);
+
   useEffect(() => {
     void eventRepo
       .getRange(fmtISO(rangeStart), fmtISO(rangeEnd))
       .then(setEvents);
-  }, [rangeStart, rangeEnd]);
+  }, [rangeStart, rangeEnd, liveTick]);
 
   useEffect(() => {
     void eventRepo.getImportantUpcoming(todayISO, 100).then(setImportant);
-  }, [todayISO]);
+  }, [todayISO, liveTick]);
+
+  useEffect(() => {
+    if (!isSupabaseEnabled || !supabase) return;
+    const channel = supabase
+      .channel("events-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "events" },
+        () => {
+          setLiveTick((n) => n + 1);
+          setFlashRecent(true);
+          window.setTimeout(() => setFlashRecent(false), 2500);
+        },
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, []);
 
   const eventsByDate = useMemo(() => groupEventsByDate(events), [events]);
 
@@ -248,6 +271,22 @@ export function CalendarView() {
       </div>
 
       <AnimatePresence>
+        {flashRecent && (
+          <motion.div
+            key="realtime-toast"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            transition={{ type: "spring", damping: 20, stiffness: 300 }}
+            className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow-lg"
+          >
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-white" />
+            </span>
+            새 이벤트 반영됨
+          </motion.div>
+        )}
         {openDate && (
           <DayModal
             key={`day-${openDate}`}
